@@ -59,7 +59,7 @@ func main() {
 	factory.WaitForCacheSync(stopCh)
 
 	// start controller
-	go ctl.Run(1, stopCh)
+	go ctl.Run(10, stopCh)
 
 	select {}
 
