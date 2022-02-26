@@ -25,7 +25,11 @@ func (c *Controller) handleErr(err error, key interface{}) {
 	}
 	if errors.IsNotFound(err) {
 		klog.Infof("svc not found %v: %v", key, err)
-		klog.Infof("Error syncing pod %v: %v", key, err)
+		klog.Infof("Error syncing svc %v: %v", key, err)
+		return
+	}
+	if errors.IsAlreadyExists(err) {
+		klog.Infof("object %s is already exists", key)
 		return
 	}
 	//如果出现问题，此控制器将重试5次
@@ -39,7 +43,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 	c.workQueue.Forget(key)
 	// 多次重试，我们也无法成功处理该key
 	runtime.HandleError(err)
-	klog.Infof("Dropping svc %q out of the queue: %v", key, err)
+	klog.Infof("Dropping object %q out of the queue: %v", key, err)
 }
 
 // Run 开始 watch 和同步
@@ -79,7 +83,6 @@ func (c *Controller) processNextItem() bool {
 	defer c.workQueue.Done(key)
 
 	// 调用包含业务逻辑的方法
-	//err := c.handleSvcEvent(key.(string))
 	strKey := key.(string)
 	strSlice := strings.Split(strKey, "/")
 	if len(strSlice) != 4 {
@@ -93,14 +96,14 @@ func (c *Controller) processNextItem() bool {
 	case AddEvent:
 		switch kind {
 		case v1.ResourceServices.String():
-			return c.HandleSvcAddEvent(ns, name)
+			c.handleErr(c.HandleSvcAddEvent(ns, name), key)
 		case v1.ResourcePods.String():
 		case EndPoints:
 		}
 	case UpdateEvent:
 		switch kind {
 		case v1.ResourceServices.String():
-			return c.HandleSvcUpdateEvent(ns, name)
+			c.handleErr(c.HandleSvcUpdateEvent(ns, name), key)
 		}
 	case DeleteEvent:
 		switch kind {

@@ -29,13 +29,13 @@ func NewController(factory informers.SharedInformerFactory, clientSet *kubernete
 func (c *Controller) firstHandleAndEnqueue(obj interface{}, eventType string, resourceType string) {
 
 	key, err := cache.MetaNamespaceKeyFunc(obj)
-	klog.Infof("svc %s event: %s", eventType, key)
+	//klog.Infof("svc %s event: %s", eventType, key)
 	if err != nil {
 		klog.Errorf("svc %s event: %s", eventType, err)
 		return
 	}
 	if !annotationIsValid(obj.(*v1.Service)) {
-		klog.Infof("drop svc %s event due to annotation is not valid", eventType)
+		//klog.Infof("drop svc %s event due to annotation is not valid", eventType)
 		return
 	}
 	customKey := key + "/" + eventType + "/" + resourceType
@@ -49,16 +49,17 @@ func (c *Controller) AddEventHandlers() {
 	c.svcInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			c.firstHandleAndEnqueue(obj, AddEvent, v1.ResourceServices.String())
-
 		},
-		UpdateFunc: func(old interface{}, new interface{}) {
 
+		UpdateFunc: func(old interface{}, new interface{}) {
 			if objectChanged(old, new) {
 				c.firstHandleAndEnqueue(new, UpdateEvent, v1.ResourceServices.String())
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			klog.Info("multus service %s would be deleted base on ownReference", obj.(*v1.Service).Name)
+			if annotationIsValid(obj) {
+				klog.Infof("multus service %s would be deleted base on ownReference", obj.(*v1.Service).Name)
+			}
 		},
 	})
 

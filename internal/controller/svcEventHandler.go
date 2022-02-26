@@ -10,15 +10,15 @@ import (
 	"strings"
 )
 
-func (c *Controller) HandleSvcAddEvent(namespace, name string) bool {
+func (c *Controller) HandleSvcAddEvent(namespace, name string) error {
 
 	svc, err := c.svcLister.Services(namespace).Get(name)
 	if err != nil {
-		klog.Errorf("Error while handling svc object: namespace(%s) name(%s) %s", namespace, name, err)
-		return false
+		//klog.Errorf("Error while handling svc object: namespace(%s) name(%s) %s", namespace, name, err)
+		return err
 	}
 	if svc.Annotations[CNCFV1NetworkMultusEnable] == "false" {
-		return true
+		return nil
 	}
 
 	multusSvc := generateMultusSvcBaseOnOriginSvc(svc)
@@ -27,7 +27,7 @@ func (c *Controller) HandleSvcAddEvent(namespace, name string) bool {
 
 	if len(subFixSet) == 0 {
 		klog.Errorf("Error while get subFix by svc selector(subFixSet not found): namespace(%s) name(%s)", namespace, name)
-		return false
+		return nil
 	}
 
 	ownerReferences := make([]metav1.OwnerReference, 0)
@@ -53,26 +53,28 @@ func (c *Controller) HandleSvcAddEvent(namespace, name string) bool {
 
 	for _, subFix := range subFixSet {
 		multusSvc.Name = originName + "-" + subFix
+		klog.Infof("start to create svc: %s", multusSvc.Name)
 		_, err = c.clientSet.CoreV1().Services(namespace).Create(context.Background(), multusSvc, metav1.CreateOptions{})
 		if errors.IsAlreadyExists(err) {
-			klog.Infof("svc %s exists", multusSvc.Name)
-			return true
-		}
-		if err != nil {
-			klog.Errorf(err.Error())
-			return false
+			oldSvc, err := c.svcLister.Services(namespace).Get(multusSvc.Name)
+			multusSvc.ResourceVersion = oldSvc.ResourceVersion
+			multusSvc.UID = oldSvc.UID
+			_, err = c.clientSet.CoreV1().Services(namespace).Update(context.Background(), multusSvc, metav1.UpdateOptions{})
+			if err != nil {
+				return err
+			}
 		}
 		klog.Infof("svc %s created", multusSvc.Name)
 	}
 
-	return true
+	return nil
 }
 
-func (c *Controller) HandleSvcUpdateEvent(namespace, name string) bool {
+func (c *Controller) HandleSvcUpdateEvent(namespace, name string) error {
 	svc, err := c.svcLister.Services(namespace).Get(name)
 	if err != nil {
-		klog.Errorf("Error while handling svc object: namespace(%s) name(%s) %s", namespace, name, err)
-		return false
+		//klog.Errorf("Error while handling svc object: namespace(%s) name(%s) %s", namespace, name, err)
+		return err
 	}
 
 	if svc.Annotations[CNCFV1NetworkMultusEnable] == "false" {
@@ -80,16 +82,12 @@ func (c *Controller) HandleSvcUpdateEvent(namespace, name string) bool {
 		for _, device := range devices {
 			multusSvcName := SvcNamePrefix + name + "-" + device
 			err := c.clientSet.CoreV1().Services(namespace).Delete(context.Background(), multusSvcName, metav1.DeleteOptions{})
-			if errors.IsNotFound(err) {
-				return true
-			}
 			if err != nil {
-				klog.Errorf("Error while deleting multus svc: %s", multusSvcName)
-				return false
+				return err
 			}
 
 		}
-		return true
+		return nil
 	}
 
 	newSvc := svc.DeepCopy()
@@ -103,8 +101,7 @@ func (c *Controller) HandleSvcUpdateEvent(namespace, name string) bool {
 	}
 
 	if err != nil {
-		klog.Errorf("Error while handling svc object: namespace(%s) name(%s) %s", namespace, name, err)
-		return false
+		return err
 	}
 
 	multusSvc.SetUID(oldMultusSvc.GetUID())
@@ -112,11 +109,10 @@ func (c *Controller) HandleSvcUpdateEvent(namespace, name string) bool {
 
 	_, err = c.clientSet.CoreV1().Services(namespace).Update(context.Background(), multusSvc, metav1.UpdateOptions{})
 	if err != nil {
-		klog.Errorf("Error while handling svc object: namespace(%s) name(%s) %s", namespace, name, err)
-		return false
+		return err
 	}
 	klog.Infof("svc %s updated", multusSvc.Name)
-	return true
+	return nil
 }
 
 func (c *Controller) HandleSvcDeleteEvent(namespace, name string) bool {
@@ -173,16 +169,6 @@ func generateMultusSvcBaseOnOriginSvc(service *v1.Service) *v1.Service {
 
 func (c *Controller) getDeviceNamesBySvc(service *v1.Service) []string {
 
-	/*
-		_, err = c.epsLister.Endpoints(namespace).Get(multusSvc.Name)
-		if errors.IsNotFound(err) {
-			selector := labels.SelectorFromSet(multusSvc.Spec.Selector)
-			pods, err := c.podLister.Pods(namespace).List(selector)
-			if err != nil {
-				klog.Errorf("Error while matching pods by label %s", selector.String())
-			}
-
-	*/
 	name := service.GetName()
 	ns := service.GetNamespace()
 
